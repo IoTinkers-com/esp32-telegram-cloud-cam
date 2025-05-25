@@ -52,9 +52,45 @@ Adafruit_NeoPixel pixels(NUMPIXELS, WS2812_PIN, NEO_GRB + NEO_KHZ800); // LED se
 
 WebServer server(80); // HTTP server on port 80 / Servidor HTTP en puerto 80
 
+// Function to reconnect WiFi if disconnected
+// Función para reconectar WiFi si está desconectado
+bool reconnectWiFi(int maxAttempts = 5) {
+  if (WiFi.status() == WL_CONNECTED) {
+    return true; // Ya está conectado
+  }
+
+  Serial.println("[WiFi] No conectado, intentando reconectar...");
+  WiFi.disconnect();
+  delay(500);
+  WiFi.begin(ssid, password);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts) {
+    Serial.printf("[WiFi] Intento de reconexión #%d\n", attempts + 1);
+    delay(1000);
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[WiFi] Reconectado exitosamente. IP: " + WiFi.localIP().toString());
+    return true;
+  } else {
+    Serial.println("[WiFi] No se pudo reconectar después de " + String(maxAttempts) + " intentos");
+    return false;
+  }
+}
+
 // Function to check for commands from the server
 // Función para verificar comandos del servidor
 String checkForCommands() {
+  // Verificar conexión WiFi antes de hacer petición HTTP
+  if (WiFi.status() != WL_CONNECTED) {
+    if (!reconnectWiFi(3)) { // Intentar reconectar con 3 intentos máximo
+      Serial.println("[HTTP] No se puede verificar comandos: WiFi desconectado");
+      return "NONE";
+    }
+  }
+  
   HTTPClient http;
   // Usar la URL de comandos definida en env.h / Use the command URL from env.h
   String url = commandUrl;
@@ -76,7 +112,15 @@ String checkForCommands() {
 
 // Function to send status to the server
 // Función para enviar estado al servidor
-void sendStatus() {
+bool sendStatus() {
+  // Verificar conexión WiFi antes de hacer petición HTTP
+  if (WiFi.status() != WL_CONNECTED) {
+    if (!reconnectWiFi(3)) { // Intentar reconectar con 3 intentos máximo
+      Serial.println("[HTTP] No se puede enviar estado: WiFi desconectado");
+      return false;
+    }
+  }
+  
   HTTPClient http;
   // Usar la URL de estado definida en env.h / Use the status URL from env.h
   String url = statusUrl;
@@ -88,18 +132,30 @@ void sendStatus() {
   String jsonPayload = "{\"status\":\"" + status + "\"}";
   
   int httpCode = http.POST(jsonPayload);
+  bool success = false;
+  
   if (httpCode == HTTP_CODE_OK) {
     Serial.println("[HTTP] Estado enviado correctamente");
+    success = true;
   } else {
     Serial.printf("[HTTP] Error al enviar estado: %d\n", httpCode);
   }
   
   http.end();
+  return success;
 }
 
 // Function to send photo to the server
 // Función para enviar foto al servidor
 bool sendPhoto(uint8_t* imageData, size_t imageSize) {
+  // Verificar conexión WiFi antes de hacer petición HTTP
+  if (WiFi.status() != WL_CONNECTED) {
+    if (!reconnectWiFi(3)) { // Intentar reconectar con 3 intentos máximo
+      Serial.println("[HTTP] No se puede enviar foto: WiFi desconectado");
+      return false;
+    }
+  }
+  
   HTTPClient http;
   // Usar la URL de foto definida en env.h / Use the photo URL from env.h
   String url = photoUrl;
@@ -242,29 +298,38 @@ void loop() {
     static unsigned long lastConnectionCheck = 0;
     static int reconnectAttempts = 0;
     
+    // Si no estamos conectados y ha pasado suficiente tiempo desde el último intento
     if (WiFi.status() != WL_CONNECTED) {
-        // Si no estamos conectados y ha pasado suficiente tiempo desde el último intento
         if (millis() - lastConnectionCheck > (reconnectAttempts < 5 ? 3000 : 10000)) { // Backoff exponencial
-            Serial.println("[WiFi] No conectado, intentando reconectar...");
-            
             // Encender LED en azul para indicar reconexión
             pixels.setPixelColor(0, pixels.Color(0, 0, 255));
             pixels.show();
             
-            // Reintentar conexión
-            WiFi.begin(ssid, password);
-            Serial.printf("[WiFi] Intento de reconexión #%d\n", reconnectAttempts + 1);
+            // Usar nuestra función mejorada de reconexión
+            bool connected = reconnectWiFi(3); // 3 intentos máximo
             
             // Incrementar contador de intentos (para backoff)
             reconnectAttempts++;
             lastConnectionCheck = millis();
             
-            // Esperar un poco más si llevamos muchos intentos
-            delay(reconnectAttempts < 5 ? 1000 : 2000);
-            
             // Apagar LED después del intento
             pixels.setPixelColor(0, pixels.Color(0, 0, 0));
             pixels.show();
+            
+            // Si no pudimos conectar después de varios intentos, esperar más tiempo
+            if (!connected && reconnectAttempts > 10) {
+                Serial.println("[WiFi] Demasiados intentos fallidos, esperando más tiempo...");
+                delay(30000); // Esperar 30 segundos antes de seguir intentando
+                reconnectAttempts = 0; // Reiniciar contador después de la espera larga
+            }
+            
+            // Si no hay conexión, salir del loop y volver a intentar en el siguiente ciclo
+            if (!connected) {
+                return;
+            }
+        } else {
+            // Si no es tiempo de reconectar, no hacer nada más en este ciclo
+            return;
         }
     } else {
         // Si estamos conectados, reiniciar contador de intentos

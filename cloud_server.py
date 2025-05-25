@@ -61,9 +61,53 @@ CHAT_ID = os.getenv("CHAT_ID", "")
 bot = None
 if TELEGRAM_TOKEN:
     try:
-        from telegram import Bot
+        from telegram import Bot, Update
+        from telegram.ext import Application, CommandHandler, ContextTypes
+        
+        # Crear instancia del bot
         bot = Bot(token=TELEGRAM_TOKEN)
         print("Telegram bot initialized successfully")
+        
+        # Función para manejar el comando /foto
+        async def handle_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            chat_id = update.effective_chat.id
+            await update.message.reply_text("📸 Solicitando foto al ESP32... Espera un momento.")
+            # Agregar comando a la cola para que el ESP32 lo recoja
+            pending_commands.append("TAKE_PHOTO")
+            print(f"[Telegram] Comando TAKE_PHOTO agregado a la cola desde chat {chat_id}")
+        
+        # Función para manejar el comando /status
+        async def handle_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            chat_id = update.effective_chat.id
+            await update.message.reply_text("📊 Solicitando estado al ESP32... Espera un momento.")
+            # Agregar comando a la cola para que el ESP32 lo recoja
+            pending_commands.append("STATUS")
+            print(f"[Telegram] Comando STATUS agregado a la cola desde chat {chat_id}")
+        
+        # Función para manejar el comando /help
+        async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            help_text = """📷 *ESP32 Telegram Cloud Cam* 📷
+
+Comandos disponibles:
+/foto - Captura una foto con la cámara
+/status - Solicita el estado actual del ESP32
+/help - Muestra este mensaje de ayuda"""
+            await update.message.reply_text(help_text, parse_mode="Markdown")
+        
+        # Configurar y lanzar el bot en segundo plano
+        async def setup_telegram_bot():
+            application = Application.builder().token(TELEGRAM_TOKEN).build()
+            application.add_handler(CommandHandler("foto", handle_foto_command))
+            application.add_handler(CommandHandler("status", handle_status_command))
+            application.add_handler(CommandHandler("help", handle_help_command))
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling()
+            print("[Telegram] Bot started and listening for commands")
+        
+        # Iniciar el bot en segundo plano
+        asyncio.create_task(setup_telegram_bot())
+        
     except Exception as e:
         print(f"Error initializing Telegram bot: {e}")
         print("Telegram integration will be disabled")
