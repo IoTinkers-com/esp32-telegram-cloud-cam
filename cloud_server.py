@@ -94,30 +94,65 @@ Comandos disponibles:
 /help - Muestra este mensaje de ayuda"""
             await update.message.reply_text(help_text, parse_mode="Markdown")
         
-        # Configurar y lanzar el bot en segundo plano
-        async def setup_telegram_bot():
-            application = Application.builder().token(TELEGRAM_TOKEN).build()
-            application.add_handler(CommandHandler("foto", handle_foto_command))
-            application.add_handler(CommandHandler("status", handle_status_command))
-            application.add_handler(CommandHandler("help", handle_help_command))
-            await application.initialize()
-            await application.start()
-            await application.updater.start_polling()
-            print("[Telegram] Bot started and listening for commands")
-        
-        # Iniciar el bot en segundo plano
-        asyncio.create_task(setup_telegram_bot())
-        
     except Exception as e:
         print(f"Error initializing Telegram bot: {e}")
         print("Telegram integration will be disabled")
 else:
     print("No Telegram token found, Telegram integration will be disabled")
 
+# Endpoint para recibir actualizaciones de Telegram (webhook)
+@app.post("/telegram-webhook")
+async def telegram_webhook(request: Request):
+    if not bot:
+        raise HTTPException(status_code=404, detail="Telegram bot not configured")
+    
+    try:
+        data = await request.json()
+        update = Update.de_json(data=data, bot=bot)
+        
+        # Procesar comandos
+        if update and update.message and update.message.text:
+            text = update.message.text
+            chat_id = update.effective_chat.id
+            
+            if text == "/foto":
+                await handle_foto_command(update, None)
+                return {"status": "ok"}
+            elif text == "/status":
+                await handle_status_command(update, None)
+                return {"status": "ok"}
+            elif text == "/help":
+                await handle_help_command(update, None)
+                return {"status": "ok"}
+        
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Error processing Telegram webhook: {e}")
+        return {"status": "error", "detail": str(e)}
+
 # Ruta principal - Interfaz web
 @app.get("/", response_class=HTMLResponse)
 async def get_html(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+# Ruta para configurar el webhook de Telegram (solo para setup inicial)
+@app.get("/setup-telegram-webhook")
+async def setup_webhook():
+    if not bot or not TELEGRAM_TOKEN:
+        return {"status": "error", "detail": "Telegram bot not configured"}
+    
+    # URL del webhook (debe ser HTTPS)
+    webhook_url = f"https://esp32-telegram-cloud-cam-backend.onrender.com/telegram-webhook"
+    
+    try:
+        # Configurar el webhook
+        result = await bot.set_webhook(url=webhook_url)
+        if result:
+            return {"status": "ok", "message": f"Webhook configurado en {webhook_url}"}
+        else:
+            return {"status": "error", "detail": "No se pudo configurar el webhook"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 # API para obtener comandos pendientes
 @app.get("/api/command")
