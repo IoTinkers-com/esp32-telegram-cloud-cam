@@ -45,6 +45,7 @@ esp32_clients = set()
 last_image_timestamp = None
 last_image_path = None
 pending_commands = []  # Cola de comandos pendientes
+pending_photo_requests = []  # Lista de chat_ids que han solicitado fotos
 
 # Load environment variables from .env file
 # Cargar variables de entorno desde el archivo .env
@@ -74,6 +75,8 @@ if TELEGRAM_TOKEN:
             await update.message.reply_text("📸 Solicitando foto al ESP32... Espera un momento.")
             # Agregar comando a la cola para que el ESP32 lo recoja
             pending_commands.append("TAKE_PHOTO")
+            # Guardar el chat_id del solicitante para enviarle la foto cuando llegue
+            pending_photo_requests.append(str(chat_id))
             print(f"[Telegram] Comando TAKE_PHOTO agregado a la cola desde chat {chat_id}")
         
         # Función para manejar el comando /status
@@ -121,10 +124,10 @@ async def telegram_webhook(request: Request):
                 # Informar al chat principal que alguien más está usando el bot
                 if bot and CHAT_ID:
                     try:
+                        # Corregido el formato del mensaje para evitar errores de parsing
                         await bot.send_message(
                             chat_id=CHAT_ID,
-                            text=f"🚨 *Alerta de Seguridad*: Un usuario con chat_id `{chat_id}` está usando tu bot. En modo producción, este acceso sería bloqueado.",
-                            parse_mode="Markdown"
+                            text=f"🚨 Alerta de Seguridad: Un usuario con chat_id {chat_id} está usando tu bot. En modo producción, este acceso sería bloqueado."
                         )
                     except Exception as e:
                         print(f"Error al enviar alerta de seguridad: {e}")
@@ -234,15 +237,33 @@ async def receive_photo(request: Request, background_tasks: BackgroundTasks):
         print(f"[Servidor] Imagen recibida y guardada como {filename} ({len(image_data)} bytes)")
         
         # Si hay un bot de Telegram configurado, enviar la imagen
-        if bot and CHAT_ID:
+        if bot:
             try:
                 with open(filepath, "rb") as photo_file:
                     photo_bytes = photo_file.read()
                 from io import BytesIO
                 bio = BytesIO(photo_bytes)
                 bio.name = os.path.basename(filepath)
-                background_tasks.add_task(bot.send_photo, chat_id=CHAT_ID, photo=bio)
-                print("[DEBUG] Imagen programada para envío a Telegram (BytesIO)")
+                
+                # Enviar al chat principal configurado
+                if CHAT_ID:
+                    background_tasks.add_task(bot.send_photo, chat_id=CHAT_ID, photo=bio)
+                    print(f"[DEBUG] Imagen programada para envío a chat principal {CHAT_ID}")
+                
+                # Enviar a todos los chats que solicitaron la foto
+                global pending_photo_requests
+                if pending_photo_requests:
+                    for requester_chat_id in pending_photo_requests:
+                        # Evitar duplicados si el solicitante es el chat principal
+                        if requester_chat_id != CHAT_ID:
+                            # Crear una nueva copia del BytesIO para cada envío
+                            requester_bio = BytesIO(photo_bytes)
+                            requester_bio.name = os.path.basename(filepath)
+                            background_tasks.add_task(bot.send_photo, chat_id=requester_chat_id, photo=requester_bio)
+                            print(f"[DEBUG] Imagen programada para envío a solicitante {requester_chat_id}")
+                    
+                    # Limpiar la lista de solicitudes pendientes
+                    pending_photo_requests = []
             except Exception as e:
                 print(f"[ERROR] Error al enviar a Telegram: {e}")
         
