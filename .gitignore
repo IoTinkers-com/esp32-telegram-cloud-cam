@@ -17,6 +17,7 @@ venv/
 ENV/
 env/
 .venv/
+src/env.h
 
 # Python cache
 __pycache__/

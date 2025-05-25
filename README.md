@@ -1,4 +1,4 @@
-# ESP32-S3-CAM IoT + Telegram + FastAPI Cloud Server
+# ESP32-telegram-cloud-cam
 # (English & Español)
 
 ---
@@ -6,13 +6,13 @@
 ## English
 
 ### Description
-This project allows you to remotely control an ESP32-S3-CAM using a Telegram bot and a Python (FastAPI) cloud server (e.g., Render.com). The ESP32 is optimized for low power (light sleep) and only takes photos on demand.
+Remotely control an ESP32-S3-CAM to take photos on demand using Telegram and a FastAPI cloud server. The ESP32 stays in low-power mode and receives commands via WebSocket. Photos are sent back to Telegram automatically.
 
 ### Features
 - ESP32-S3-CAM stays in light sleep, keeping Wi-Fi active for remote commands.
 - Full control via Telegram: request photos, check status, ping, or remotely reboot.
 - The server (FastAPI) receives Telegram messages, relays commands to the ESP32 via WebSocket, and forwards images to Telegram.
-- Code is commented line by line for beginners.
+- **All scripts are thoroughly commented in both English and Spanish for beginners.**
 
 ### Project Structure
 ```
@@ -22,9 +22,51 @@ cam-test/
 ├── requirements.txt       # Python dependencies
 ├── platformio.ini         # PlatformIO config
 ├── .env                   # Secret variables (DO NOT commit)
+├── src/env.example.h      # Example environment config (copy as env.h)
 ├── .gitignore             # Files/folders ignored by git
 └── ...
 ```
+
+### Environment Configuration
+- **Never commit your real WiFi or server credentials!**
+- Copy `src/env.example.h` to `src/env.h` and fill in your own WiFi and WebSocket server info.
+- `src/env.h` is in `.gitignore` by default to protect your secrets.
+
+---
+
+## Español
+
+### Descripción
+Controla remotamente una ESP32-S3-CAM para tomar fotos bajo demanda usando Telegram y un servidor en la nube con FastAPI. El ESP32 permanece en modo de bajo consumo y recibe comandos por WebSocket. Las fotos se envían automáticamente a Telegram.
+
+### Características
+- El ESP32-S3-CAM permanece en light sleep, manteniendo Wi-Fi activo para recibir comandos.
+- Control total mediante Telegram: puedes pedir fotos, consultar estado, hacer ping o reiniciar el dispositivo.
+- El servidor (FastAPI) recibe mensajes del bot, reenvía comandos al ESP32 vía WebSocket y reenvía imágenes a Telegram.
+- **Todos los scripts están ampliamente comentados en inglés y español para principiantes.**
+
+### Estructura del proyecto
+```
+cam-test/
+├── src/main.cpp           # Firmware para ESP32-S3-CAM
+├── cloud_server.py        # Servidor FastAPI + WebSocket + Telegram
+├── requirements.txt       # Dependencias Python
+├── platformio.ini         # Configuración PlatformIO
+├── .env                   # Variables secretas (NO subir a GitHub)
+├── src/env.example.h      # Configuración de entorno de ejemplo (copiar como env.h)
+├── .gitignore             # Archivos/Carpetas ignorados por git
+└── ...
+```
+
+### Configuración de entorno
+- **¡Nunca subas tus credenciales reales de WiFi o servidor!**
+- Copia `src/env.example.h` a `src/env.h` y pon tus datos de WiFi y WebSocket.
+- `src/env.h` ya está en `.gitignore` para proteger tus claves.
+
+---
+
+**See each script for detailed, bilingual comments explaining every relevant step.**
+**Consulta cada script para ver comentarios detallados y bilingües sobre cada paso relevante.**
 
 ### ESP32-S3-CAM Code Example (Commented)
 ```cpp

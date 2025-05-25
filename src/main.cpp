@@ -11,11 +11,13 @@
 #include "FS.h"                      // File system / Sistema de archivos
 #include "SD_MMC.h"                  // SD card / Tarjeta SD
 #include "esp_camera.h"              // Camera driver / Driver de cámara
+#include "env.h"                     // Environment config / Configuración de entorno
 
-// --- WiFi and WebSocket configuration / Configuración WiFi y WebSocket ---
-const char* ssid = "420 - 2,4GHZ";      // <-- Change for your network / Cambia por tu red
-const char* password = "Seleccion420";  // <-- Change for your password / Cambia por tu clave
-const char* ws_server = "wss://TU_RENDER_URL/ws"; // Change for your Render URL / Cambia por tu URL Render
+// --- WiFi and WebSocket configuration from env.h ---
+// Configuración WiFi y WebSocket desde env.h
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
+const char* ws_server = WS_SERVER_URL;
 WebSocketsClient webSocket;
 bool take_photo_flag = false;   // Flag to take photo / Bandera para tomar foto
 bool reboot_flag = false;       // Flag to reboot / Bandera para reiniciar
