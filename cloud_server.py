@@ -55,7 +55,15 @@ load_dotenv()
 # Get Telegram credentials from environment variables
 # Obtiene credenciales de Telegram desde variables de entorno
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+
+# Lista de chat_ids autorizados (separados por coma en la variable de entorno)
 CHAT_ID = os.getenv("CHAT_ID", "")
+# Para pruebas, añadimos el ID 7050678857 como autorizado
+AUTHORIZED_CHAT_IDS = [CHAT_ID] if CHAT_ID else []
+# Añadir el ID del usuario de prueba
+AUTHORIZED_CHAT_IDS.append("7050678857")
+# Eliminar duplicados y valores vacíos
+AUTHORIZED_CHAT_IDS = [id for id in AUTHORIZED_CHAT_IDS if id]
 
 # Initialize Telegram bot if token is available
 # Inicializa el bot de Telegram si el token está disponible
@@ -118,20 +126,21 @@ async def telegram_webhook(request: Request):
             text = update.message.text
             chat_id = str(update.effective_chat.id)
             
-            # En modo de pruebas, permitir acceso a cualquier usuario pero registrar el acceso
-            if CHAT_ID and chat_id != CHAT_ID:
+            # Verificar si el chat_id está en la lista de autorizados
+            if chat_id not in AUTHORIZED_CHAT_IDS:
                 print(f"[Seguridad] Acceso de usuario no registrado desde chat_id: {chat_id} - PERMITIDO EN MODO PRUEBAS")
                 # Informar al chat principal que alguien más está usando el bot
                 if bot and CHAT_ID:
                     try:
-                        # Corregido el formato del mensaje para evitar errores de parsing
                         await bot.send_message(
                             chat_id=CHAT_ID,
-                            text=f"🚨 Alerta de Seguridad: Un usuario con chat_id {chat_id} está usando tu bot. En modo producción, este acceso sería bloqueado."
+                            text=f"🚨 Alerta de Seguridad: Un usuario con chat_id {chat_id} está usando tu bot."
                         )
                     except Exception as e:
                         print(f"Error al enviar alerta de seguridad: {e}")
                 # En modo pruebas, continuamos con el procesamiento
+            else:
+                print(f"[Seguridad] Acceso autorizado desde chat_id: {chat_id}")
             
             # Procesar comandos solo de usuarios autorizados
             if text == "/foto":
@@ -245,10 +254,14 @@ async def receive_photo(request: Request, background_tasks: BackgroundTasks):
                 bio = BytesIO(photo_bytes)
                 bio.name = os.path.basename(filepath)
                 
-                # Enviar al chat principal configurado
-                if CHAT_ID:
-                    background_tasks.add_task(bot.send_photo, chat_id=CHAT_ID, photo=bio)
-                    print(f"[DEBUG] Imagen programada para envío a chat principal {CHAT_ID}")
+                # Enviar a todos los chats autorizados
+                for authorized_id in AUTHORIZED_CHAT_IDS:
+                    if authorized_id:
+                        # Crear una nueva copia del BytesIO para cada envío
+                        auth_bio = BytesIO(photo_bytes)
+                        auth_bio.name = os.path.basename(filepath)
+                        background_tasks.add_task(bot.send_photo, chat_id=authorized_id, photo=auth_bio)
+                        print(f"[DEBUG] Imagen programada para envío a chat autorizado {authorized_id}")
                 
                 # Enviar a todos los chats que solicitaron la foto
                 global pending_photo_requests
