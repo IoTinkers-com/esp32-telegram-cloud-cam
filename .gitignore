@@ -1,0 +1,52 @@
+# PlatformIO build system
+.pio/
+.pio*
+.pioenvs/
+.piolibdeps/
+
+# VSCode config
+.vscode/
+.vscode/*
+
+# PlatformIO IDE project files
+*.sublime-project
+*.sublime-workspace
+
+# Python virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos de entorno y secretos
+.env
+.env.*
+
+# Archivos temporales y binarios
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.bin
+*.elf
+*.exe
+*.log
+*.tmp
+
+# Archivos de ejemplo/autogenerados
+recibir_imagen.py
+test/
+lib/README
+include/README
+
+# Otros
+.DS_Store
+Thumbs.db
+
+# No subas tus datos personales, claves ni imágenes de prueba
+captura.jpg
