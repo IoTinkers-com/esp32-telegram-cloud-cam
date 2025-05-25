@@ -113,8 +113,24 @@ async def telegram_webhook(request: Request):
         # Procesar comandos
         if update and update.message and update.message.text:
             text = update.message.text
-            chat_id = update.effective_chat.id
+            chat_id = str(update.effective_chat.id)
             
+            # En modo de pruebas, permitir acceso a cualquier usuario pero registrar el acceso
+            if CHAT_ID and chat_id != CHAT_ID:
+                print(f"[Seguridad] Acceso de usuario no registrado desde chat_id: {chat_id} - PERMITIDO EN MODO PRUEBAS")
+                # Informar al chat principal que alguien más está usando el bot
+                if bot and CHAT_ID:
+                    try:
+                        await bot.send_message(
+                            chat_id=CHAT_ID,
+                            text=f"🚨 *Alerta de Seguridad*: Un usuario con chat_id `{chat_id}` está usando tu bot. En modo producción, este acceso sería bloqueado.",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        print(f"Error al enviar alerta de seguridad: {e}")
+                # En modo pruebas, continuamos con el procesamiento
+            
+            # Procesar comandos solo de usuarios autorizados
             if text == "/foto":
                 await handle_foto_command(update, None)
                 return {"status": "ok"}
