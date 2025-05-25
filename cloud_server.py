@@ -24,6 +24,7 @@ from datetime import datetime
 import uuid
 import json
 import os
+from io import BytesIO
 
 # Crear la carpeta 'images' si no existe
 if not os.path.exists("images"):
@@ -141,8 +142,12 @@ async def receive_photo(request: Request, background_tasks: BackgroundTasks):
         if bot and CHAT_ID:
             try:
                 with open(filepath, "rb") as photo_file:
-                    background_tasks.add_task(bot.send_photo, chat_id=CHAT_ID, photo=photo_file)
-                print("[DEBUG] Imagen programada para envío a Telegram")
+                    photo_bytes = photo_file.read()
+                from io import BytesIO
+                bio = BytesIO(photo_bytes)
+                bio.name = os.path.basename(filepath)
+                background_tasks.add_task(bot.send_photo, chat_id=CHAT_ID, photo=bio)
+                print("[DEBUG] Imagen programada para envío a Telegram (BytesIO)")
             except Exception as e:
                 print(f"[ERROR] Error al enviar a Telegram: {e}")
         
