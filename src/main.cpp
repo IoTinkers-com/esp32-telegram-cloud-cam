@@ -7,42 +7,20 @@
 #include <Adafruit_NeoPixel.h>        // RGB LED for feedback / LED RGB para feedback
 #include <WiFi.h>                     // WiFi connection / Conexión WiFi
 #include <WebServer.h>                // HTTP server / Servidor HTTP
-#include <WebSocketsClient.h>         // WebSocket for cloud / WebSocket para la nube
+#include <HTTPClient.h>               // HTTP client / Cliente HTTP
 #include "FS.h"                      // File system / Sistema de archivos
 #include "SD_MMC.h"                  // SD card / Tarjeta SD
-#include "esp_camera.h"              // Camera driver / Driver de cámara
+// Eliminada la inclusión duplicada de esp_camera.h
 #include "env.h"                     // Environment config / Configuración de entorno
 
-// --- WiFi and WebSocket configuration from env.h ---
-// Configuración WiFi y WebSocket desde env.h
+// --- WiFi and HTTP configuration from env.h ---
+// Configuración WiFi y HTTP desde env.h
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
-const char* ws_server = WS_SERVER_URL;
-WebSocketsClient webSocket;
+// Usando las constantes WS_ por compatibilidad, pero ahora son para HTTP
+String serverUrl = "http://" + String(WS_SERVER_HOST) + ":" + String(WS_SERVER_PORT);
 bool take_photo_flag = false;   // Flag to take photo / Bandera para tomar foto
 bool reboot_flag = false;       // Flag to reboot / Bandera para reiniciar
-
-// Supported commands: TAKE_PHOTO, PING, STATUS, REBOOT
-// Comandos soportados: TAKE_PHOTO, PING, STATUS, REBOOT
-void onWebSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-    if (type == WStype_TEXT) {
-        String cmd = String((char*)payload);
-        Serial.print("[WebSocket] Received command: /"); Serial.print("[WebSocket] Comando recibido: "); Serial.println(cmd);
-        if (cmd == "TAKE_PHOTO") {
-            take_photo_flag = true; // Set flag / Activa bandera
-        } else if (cmd == "PING") {
-            webSocket.sendTXT("PONG"); // Respond to ping / Responde a ping
-        } else if (cmd == "STATUS") {
-            char status[128];
-            snprintf(status, sizeof(status), "STATUS: heap=%u, psram=%u, ip=%s", ESP.getFreeHeap(), ESP.getFreePsram(), WiFi.localIP().toString().c_str());
-            webSocket.sendTXT(status); // Send status / Envía estado
-        } else if (cmd == "REBOOT") {
-            reboot_flag = true; // Set reboot flag / Activa bandera de reinicio
-        } else {
-            webSocket.sendTXT("UNKNOWN_COMMAND"); // Unknown command / Comando desconocido
-        }
-    }
-}
 
 // WS2812 LED
 // LED WS2812
@@ -70,6 +48,90 @@ Adafruit_NeoPixel pixels(NUMPIXELS, WS2812_PIN, NEO_GRB + NEO_KHZ800); // LED se
 
 WebServer server(80); // HTTP server on port 80 / Servidor HTTP en puerto 80
 
+// Function to check for commands from the server
+// Función para verificar comandos del servidor
+String checkForCommands() {
+  HTTPClient http;
+  String url = serverUrl + "/api/command";
+  http.begin(url);
+  
+  int httpCode = http.GET();
+  String command = "NONE";
+  
+  if (httpCode == HTTP_CODE_OK) {
+    command = http.getString();
+    Serial.println("[HTTP] Comando recibido: " + command);
+  } else {
+    Serial.printf("[HTTP] Error al verificar comandos: %d\n", httpCode);
+  }
+  
+  http.end();
+  return command;
+}
+
+// Function to send status to the server
+// Función para enviar estado al servidor
+void sendStatus() {
+  HTTPClient http;
+  String url = serverUrl + "/api/status";
+  http.begin(url);
+  
+  String status = "STATUS: heap=" + String(ESP.getFreeHeap()) + ", ip=" + WiFi.localIP().toString();
+  
+  http.addHeader("Content-Type", "application/json");
+  String jsonPayload = "{\"status\":\"" + status + "\"}";
+  
+  int httpCode = http.POST(jsonPayload);
+  if (httpCode == HTTP_CODE_OK) {
+    Serial.println("[HTTP] Estado enviado correctamente");
+  } else {
+    Serial.printf("[HTTP] Error al enviar estado: %d\n", httpCode);
+  }
+  
+  http.end();
+}
+
+// Function to send photo to the server
+// Función para enviar foto al servidor
+bool sendPhoto(uint8_t* imageData, size_t imageSize) {
+  HTTPClient http;
+  String url = serverUrl + "/api/photo";
+  
+  // Imprimir más información para depuración
+  Serial.println("[DEBUG] Conectando a URL: " + url);
+  Serial.printf("[DEBUG] Tamaño de imagen: %d bytes\n", imageSize);
+  
+  http.begin(url);
+  http.addHeader("Content-Type", "image/jpeg");
+  
+  // Aumentar el timeout para dar más tiempo a la transferencia
+  http.setTimeout(20000); // 20 segundos
+  
+  Serial.println("[HTTP] Enviando imagen al servidor...");
+  int httpCode = http.POST(imageData, imageSize);
+  
+  // Imprimir más información sobre la respuesta
+  Serial.printf("[DEBUG] Código de respuesta HTTP: %d\n", httpCode);
+  
+  if (httpCode > 0) {
+    String payload = http.getString();
+    Serial.println("[DEBUG] Respuesta del servidor: " + payload);
+  } else {
+    Serial.printf("[DEBUG] Error en la solicitud HTTP: %s\n", http.errorToString(httpCode).c_str());
+  }
+  
+  bool success = (httpCode == HTTP_CODE_OK);
+  
+  if (success) {
+    Serial.println("[HTTP] Imagen enviada correctamente");
+  } else {
+    Serial.printf("[HTTP] Error al enviar imagen: %d\n", httpCode);
+  }
+  
+  http.end();  // Aseguramos que http.end() siempre se ejecute
+  return success;
+}
+
 void setup() {
     Serial.begin(115200); // Start serial / Inicia serial
     delay(2000);
@@ -79,6 +141,9 @@ void setup() {
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) delay(500);
     Serial.println("\nWiFi connected. IP: / WiFi conectado. IP: " + WiFi.localIP().toString());
+
+    // --- HTTP configuration / Configuración HTTP ---
+    Serial.println("[HTTP] Servidor configurado en: " + serverUrl);
 
     // --- SD card init with forced pins (CLK=39, CMD=38, DATA0=40, 1-bit mode) ---
     // Inicializa SD con pines forzados (CLK=39, CMD=38, DATA0=40, modo 1-bit)
@@ -124,6 +189,14 @@ void setup() {
         pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Green LED / LED verde
         pixels.show();
         Serial.println("Camera initialized OK / Camara inicializada correctamente");
+        
+        // Configurar rotación de la imagen 180 grados
+        sensor_t * s = esp_camera_sensor_get();
+        if (s) {
+            s->set_hmirror(s, 1);   // Espejo horizontal / Horizontal mirror
+            s->set_vflip(s, 1);      // Volteo vertical / Vertical flip
+            Serial.println("Camera rotation set to 180 degrees / Rotación de cámara configurada a 180 grados");
+        }
     } else {
         pixels.setPixelColor(0, pixels.Color(255, 0, 0)); // Red LED / LED rojo
         pixels.show();
@@ -146,28 +219,146 @@ void setup() {
     server.begin(); // Start HTTP server / Inicia servidor HTTP
 }
 
-
 void loop() {
-    // Reconexión automática WebSocket si se desconecta
-    if (!webSocket.isConnected()) {
-        Serial.println("[WebSocket] Desconectado, intentando reconectar...");
-        webSocket.beginSSL("TU_RENDER_URL", 443, "/ws");
+    // Dar tiempo al sistema para evitar watchdog
+    delay(50);
+    
+    // Verificar estado de la bandera take_photo_flag
+    static unsigned long lastDebugTime = 0;
+    if (millis() - lastDebugTime > 10000) { // Cada 10 segundos
+        Serial.printf("[DEBUG] Estado actual de take_photo_flag: %d\n", take_photo_flag);
+        lastDebugTime = millis();
     }
-    webSocket.loop();
-
+    
+    // Verificar conexión WiFi y reconectar si es necesario
+    static unsigned long lastConnectionCheck = 0;
+    static int reconnectAttempts = 0;
+    
+    if (WiFi.status() != WL_CONNECTED) {
+        // Si no estamos conectados y ha pasado suficiente tiempo desde el último intento
+        if (millis() - lastConnectionCheck > (reconnectAttempts < 5 ? 3000 : 10000)) { // Backoff exponencial
+            Serial.println("[WiFi] No conectado, intentando reconectar...");
+            
+            // Encender LED en azul para indicar reconexión
+            pixels.setPixelColor(0, pixels.Color(0, 0, 255));
+            pixels.show();
+            
+            // Reintentar conexión
+            WiFi.begin(ssid, password);
+            Serial.printf("[WiFi] Intento de reconexión #%d\n", reconnectAttempts + 1);
+            
+            // Incrementar contador de intentos (para backoff)
+            reconnectAttempts++;
+            lastConnectionCheck = millis();
+            
+            // Esperar un poco más si llevamos muchos intentos
+            delay(reconnectAttempts < 5 ? 1000 : 2000);
+            
+            // Apagar LED después del intento
+            pixels.setPixelColor(0, pixels.Color(0, 0, 0));
+            pixels.show();
+        }
+    } else {
+        // Si estamos conectados, reiniciar contador de intentos
+        reconnectAttempts = 0;
+        
+        // Verificar comandos periódicamente
+        static unsigned long lastCommandCheck = 0;
+        if (millis() - lastCommandCheck > 5000) { // Cada 5 segundos
+            String command = checkForCommands();
+            Serial.printf("[DEBUG] Valor crudo de comando: '%s'\n", command.c_str());
+            command.trim(); // Elimina espacios y saltos de línea
+            Serial.printf("[DEBUG] Valor de comando tras trim(): '%s'\n", command.c_str());
+            command.replace("\"", ""); // Elimina comillas dobles
+            Serial.printf("[DEBUG] Valor de comando final para comparar: '%s'\n", command.c_str());
+            if (command == "TAKE_PHOTO") {
+                Serial.println("[DEBUG] Comando TAKE_PHOTO recibido, activando bandera");
+                take_photo_flag = true;
+                Serial.printf("[DEBUG] Estado de take_photo_flag: %d\n", take_photo_flag);
+            } else if (command == "STATUS") {
+                sendStatus();
+            } else if (command == "REBOOT") {
+                reboot_flag = true;
+            }
+            
+            lastCommandCheck = millis();
+        }
+        
+        // Enviar estado periódicamente (heartbeat)
+        static unsigned long lastStatusTime = 0;
+        if (millis() - lastStatusTime > 30000) { // Cada 30 segundos
+            sendStatus();
+            lastStatusTime = millis();
+        }
+    }
+    
     // Comando: Tomar foto y enviar
     if (take_photo_flag) {
         Serial.println("[Accion] Capturando y enviando foto...");
+        Serial.printf("[DEBUG] Memoria libre: %d bytes\n", ESP.getFreeHeap());
+        
+        // Asegurarse de que estamos conectados antes de intentar capturar
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("[Error] WiFi no conectado, abortando captura");
+            take_photo_flag = false;
+            return;
+        }
+        
+        Serial.printf("[DEBUG] Estado WiFi: conectado, IP: %s\n", WiFi.localIP().toString().c_str());
+        
+        // Encender LED para indicar captura
+        pixels.setPixelColor(0, pixels.Color(255, 255, 0)); // Amarillo durante captura
+        pixels.show();
+        
+        // Capturar foto
         camera_fb_t *fb = esp_camera_fb_get();
         if (fb && fb->len > 0) {
-            webSocket.sendBIN(fb->buf, fb->len);
-            Serial.printf("[Foto] Capturada y enviada (%d bytes)\n", fb->len);
+            Serial.printf("[Foto] Capturada (%d bytes), enviando...\n", fb->len);
+            
+            // Guardar en SD como respaldo
+            bool saved_to_sd = false;
+            if (SD_MMC.cardType() != CARD_NONE) {
+                // Guardar imagen en la SD
+                String path = "/imagen.jpg";
+                File file = SD_MMC.open(path.c_str(), FILE_WRITE);
+                if (file) {
+                    file.write(fb->buf, fb->len);
+                    file.close();
+                    saved_to_sd = true;
+                    Serial.println("[Foto] Guardada en SD como respaldo");
+                }
+            }
+            
+            // Enviar la imagen al servidor
+            bool success = sendPhoto(fb->buf, fb->len);
+            
+            if (success) {
+                Serial.println("[Foto] Enviada correctamente");
+                pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Verde = éxito
+            } else {
+                Serial.println("[Error] No se pudo enviar la imagen");
+                pixels.setPixelColor(0, pixels.Color(255, 0, 0)); // Rojo = error
+            }
+            
+            // Liberar buffer de la cámara
             esp_camera_fb_return(fb);
+            
+            // Si se guardó en SD, informar al usuario
+            if (saved_to_sd) {
+                Serial.println("[Info] La imagen está disponible en http://" + 
+                               WiFi.localIP().toString() + "/imagen.jpg");
+            }
         } else {
             Serial.println("[Error] No se pudo capturar la imagen o está vacía");
             if (fb) esp_camera_fb_return(fb);
-            webSocket.sendTXT("ERROR:CAPTURE_FAIL");
+            pixels.setPixelColor(0, pixels.Color(255, 0, 0)); // Rojo = error
         }
+        
+        pixels.show();
+        delay(500); // Mantener LED encendido brevemente
+        pixels.setPixelColor(0, pixels.Color(0, 0, 0)); // Apagar LED
+        pixels.show();
+        
         take_photo_flag = false;
     }
 

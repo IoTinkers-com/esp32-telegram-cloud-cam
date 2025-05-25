@@ -12,6 +12,9 @@ Remotely control an ESP32-S3-CAM to take photos on demand using Telegram and a F
 - ESP32-S3-CAM stays in light sleep, keeping Wi-Fi active for remote commands.
 - Full control via Telegram: request photos, check status, ping, or remotely reboot.
 - The server (FastAPI) receives Telegram messages, relays commands to the ESP32 via WebSocket, and forwards images to Telegram.
+- **Optimized image transfer** using chunked data to prevent disconnections.
+- **Web interface** for controlling the camera and viewing captured images.
+- **Automatic reconnection** for improved stability.
 - **All scripts are thoroughly commented in both English and Spanish for beginners.**
 
 ### Project Structure
@@ -43,6 +46,9 @@ Controla remotamente una ESP32-S3-CAM para tomar fotos bajo demanda usando Teleg
 - El ESP32-S3-CAM permanece en light sleep, manteniendo Wi-Fi activo para recibir comandos.
 - Control total mediante Telegram: puedes pedir fotos, consultar estado, hacer ping o reiniciar el dispositivo.
 - El servidor (FastAPI) recibe mensajes del bot, reenvía comandos al ESP32 vía WebSocket y reenvía imágenes a Telegram.
+- **Transferencia de imágenes optimizada** usando fragmentos para evitar desconexiones.
+- **Interfaz web** para controlar la cámara y visualizar las imágenes capturadas.
+- **Reconexión automática** para mayor estabilidad.
 - **Todos los scripts están ampliamente comentados en inglés y español para principiantes.**
 
 ### Estructura del proyecto
@@ -385,57 +391,69 @@ async def ws_endpoint(websocket: WebSocket):
 
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
-    data = await req.json()
-    msg = data.get("message", {}).get("text", "")
-    chat_id = data.get("message", {}).get("chat", {}).get("id")
-    if msg and chat_id:
-        for ws in list(esp32_clients):
-            await ws.send_text("TAKE_PHOTO")
-        await bot.send_message(chat_id=chat_id, text="¡Tomando foto!")
-    return {"ok": True}
 ```
+> **No subas tu `.env` real a GitHub. Usa `.env.example` como plantilla.
 
----
-
-## 3. Configuración y despliegue
-
-### Variables de entorno (`.env`):
-```
-TELEGRAM_TOKEN=tu_token_de_bot
-CHAT_ID=opcional
-```
-
-### Instalar dependencias y correr localmente:
+### 4. Instala dependencias Python
 ```sh
-python -m venv venv
-# En Windows:
-venv\Scripts\activate
-# En Linux/Mac:
-source venv/bin/activate
 pip install -r requirements.txt
-uvicorn cloud_server:app --reload --port 8000
 ```
 
-### Despliegue en Render.com
-1. Sube el repo a GitHub (sin `.env`).
-2. Crea un nuevo Web Service en Render, conecta tu repo y pon las variables de entorno.
-3. Usa como comando de inicio:
-   ```
-   uvicorn cloud_server:app --host 0.0.0.0 --port 10000
-   ```
-4. Configura el webhook de Telegram:
-   ```
-   https://api.telegram.org/bot<TU_TOKEN>/setWebhook?url=https://<tu-app>.onrender.com/webhook
-   ```
+### 5. Carga el firmware en el ESP32
+Usa PlatformIO para compilar y subir el código desde la carpeta `src/`.
+
+### 6. Despliega el backend
+#### Opción A: Local + ngrok (solo para pruebas)
+- Ejecuta:
+  ```sh
+  uvicorn cloud_server:app --reload --host 0.0.0.0 --port 8000
+  ngrok http 8000
+  ```
+- Usa la URL pública de ngrok para el webhook de Telegram.
+
+#### Opción B: Render.com o similar (recomendado)
+- Sube tu repo a GitHub.
+- Conecta en Render.com y configura variables de entorno.
+- El backend estará accesible en una URL pública permanente.
+
+### 7. Obtén tu token y chat ID de Telegram
+- Crea un bot con [@BotFather](https://t.me/BotFather) y obtén el `TELEGRAM_TOKEN`.
+- Habla con tu bot y usa [este bot](https://t.me/userinfobot) o la API para obtener tu `CHAT_ID`.
+
+### 8. Registra el webhook de Telegram
+En tu navegador:
+```
+https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://TU_URL_PUBLICA/webhook
+```
+Verifica con:
+```
+https://api.telegram.org/bot<TELEGRAM_TOKEN>/getWebhookInfo
+```
 
 ---
 
-## 4. Notas para principiantes
-- **No subas tu `.env` ni claves a GitHub.**
-- Puedes extender los comandos y lógica fácilmente.
-- El ESP32 puede usarse con otros servicios (MQTT, HTTP, etc) cambiando el backend.
-- El código está comentado para que puedas entender cada bloque y adaptarlo a tu necesidad.
+## Consejos y buenas prácticas
+- **No subas tu `.env` real**: usa `.env.example` en el repo.
+- **Siempre actualiza el webhook** si cambias de URL (ngrok o nuevo despliegue).
+- **El backend sobrescribe la última imagen**, así la web y Telegram siempre muestran la más reciente.
+- **El ESP32 y el backend deben estar en la misma red** (o el ESP32 debe poder alcanzar el backend cloud).
+- **Para producción, usa Render.com o similar** para evitar problemas de acceso y webhooks.
+- **Agrega seguridad** si expones el backend a internet (por ejemplo, autenticación básica o restricción de IPs).
 
 ---
 
-¡Listo! Ahora tienes una base robusta y didáctica para proyectos IoT con ESP32, Telegram y Python Cloud.
+## Flujo de uso
+1. Envía `/foto` al bot de Telegram → El backend agrega el comando.
+2. El ESP32 consulta el backend, recibe el comando y toma la foto.
+3. El ESP32 sube la imagen al backend.
+4. El backend sobrescribe la última imagen y la reenvía a Telegram y la web.
+
+---
+
+## Soporte y contribución
+¿Dudas, sugerencias o mejoras? ¡Abre un issue o pull request en GitHub!
+
+---
+
+## Licencia
+MIT License
