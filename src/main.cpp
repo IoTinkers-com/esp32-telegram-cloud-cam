@@ -18,7 +18,11 @@
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 // Usando las constantes WS_ por compatibilidad, pero ahora son para HTTP
-String serverUrl = "http://" + String(WS_SERVER_HOST) + ":" + String(WS_SERVER_PORT);
+// URLs completas para cada endpoint (definidas en env.h)
+// Full URLs for each endpoint (defined in env.h)
+String commandUrl = WS_COMMAND_URL;   // Comandos / Commands
+String photoUrl   = WS_PHOTO_URL;     // Foto / Photo
+String statusUrl  = WS_STATUS_URL;    // Estado / Status
 bool take_photo_flag = false;   // Flag to take photo / Bandera para tomar foto
 bool reboot_flag = false;       // Flag to reboot / Bandera para reiniciar
 
@@ -52,7 +56,8 @@ WebServer server(80); // HTTP server on port 80 / Servidor HTTP en puerto 80
 // Función para verificar comandos del servidor
 String checkForCommands() {
   HTTPClient http;
-  String url = serverUrl + "/api/command";
+  // Usar la URL de comandos definida en env.h / Use the command URL from env.h
+  String url = commandUrl;
   http.begin(url);
   
   int httpCode = http.GET();
@@ -73,7 +78,8 @@ String checkForCommands() {
 // Función para enviar estado al servidor
 void sendStatus() {
   HTTPClient http;
-  String url = serverUrl + "/api/status";
+  // Usar la URL de estado definida en env.h / Use the status URL from env.h
+  String url = statusUrl;
   http.begin(url);
   
   String status = "STATUS: heap=" + String(ESP.getFreeHeap()) + ", ip=" + WiFi.localIP().toString();
@@ -95,8 +101,8 @@ void sendStatus() {
 // Función para enviar foto al servidor
 bool sendPhoto(uint8_t* imageData, size_t imageSize) {
   HTTPClient http;
-  String url = serverUrl + "/api/photo";
-  
+  // Usar la URL de foto definida en env.h / Use the photo URL from env.h
+  String url = photoUrl;
   // Imprimir más información para depuración
   Serial.println("[DEBUG] Conectando a URL: " + url);
   Serial.printf("[DEBUG] Tamaño de imagen: %d bytes\n", imageSize);
@@ -143,7 +149,9 @@ void setup() {
     Serial.println("\nWiFi connected. IP: / WiFi conectado. IP: " + WiFi.localIP().toString());
 
     // --- HTTP configuration / Configuración HTTP ---
-    Serial.println("[HTTP] Servidor configurado en: " + serverUrl);
+    Serial.println("[HTTP] URL comando: " + commandUrl);
+    Serial.println("[HTTP] URL foto: " + photoUrl);
+    Serial.println("[HTTP] URL estado: " + statusUrl);
 
     // --- SD card init with forced pins (CLK=39, CMD=38, DATA0=40, 1-bit mode) ---
     // Inicializa SD con pines forzados (CLK=39, CMD=38, DATA0=40, modo 1-bit)

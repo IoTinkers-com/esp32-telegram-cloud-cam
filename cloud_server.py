@@ -23,6 +23,11 @@ import time
 from datetime import datetime
 import uuid
 import json
+import os
+
+# Crear la carpeta 'images' si no existe
+if not os.path.exists("images"):
+    os.makedirs("images")
 
 app = FastAPI()
 
